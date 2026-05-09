@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -11,33 +12,20 @@ class Segment {
   final String text;
   final Duration fromTs;
   final Duration toTs;
+
   const Segment({required this.text, required this.fromTs, required this.toTs});
 
-  Segment copyWith({
-    String? text,
-    Duration? fromTs,
-    Duration? toTs,
-  }) {
-    return Segment(
-      text:   text   ?? this.text,
-      fromTs: fromTs ?? this.fromTs,
-      toTs:   toTs   ?? this.toTs,
-    );
-  }
+  Segment copyWith({String? text, Duration? fromTs, Duration? toTs}) =>
+      Segment(text: text ?? this.text, fromTs: fromTs ?? this.fromTs, toTs: toTs ?? this.toTs);
 }
 
-// ─── Recognizer helper ───────────────────────────────────────────────────────
+// ─── Recognizer helper (main isolate only) ────────────────────────────────────
 
-/// Call once and cache the result — initializing Whisper is expensive.
-sherpa_onnx.OfflineRecognizer? _sherpaRecognizer;
+sherpa_onnx.OnlineRecognizer? _sherpaRecognizer;
 
-Future<sherpa_onnx.OfflineRecognizer> getSherpaRecognizer() async {
+Future<sherpa_onnx.OnlineRecognizer> getSherpaRecognizer() async {
   if (_sherpaRecognizer != null) return _sherpaRecognizer!;
 
-  // Model files must be placed in assets/sherpa-onnx-whisper-small/
-  // and declared in pubspec.yaml. Download from:
-  // https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models
-  // File: sherpa-onnx-whisper-small.tar.bz2
   Future<String> assetPath(String rel) async {
     final data = await rootBundle.load(rel);
     final bytes = data.buffer.asUint8List();
@@ -48,112 +36,168 @@ Future<sherpa_onnx.OfflineRecognizer> getSherpaRecognizer() async {
     return file.path;
   }
 
-  const modelDir = 'assets/sherpa-onnx-whisper-small';
-  final encoder = await assetPath('$modelDir/small-encoder.int8.onnx');
-  final decoder = await assetPath('$modelDir/small-decoder.int8.onnx');
-  final tokens  = await assetPath('$modelDir/small-tokens.txt');
+  const modelDir = 'assets/kroko-de';
+  final encoder = await assetPath('$modelDir/encoder.int8.onnx');
+  final decoder = await assetPath('$modelDir/decoder.int8.onnx');
+  final joiner = await assetPath('$modelDir/joiner.int8.onnx');
+  final tokens = await assetPath('$modelDir/tokens.txt');
 
-  final config = sherpa_onnx.OfflineRecognizerConfig(
-    model: sherpa_onnx.OfflineModelConfig(
-      whisper: sherpa_onnx.OfflineWhisperModelConfig(
-        encoder: encoder,
-        decoder: decoder,
-        language: '',   // empty = multilingual auto-detect
-        task: 'transcribe',
-      ),
+  final config = sherpa_onnx.OnlineRecognizerConfig(
+    model: sherpa_onnx.OnlineModelConfig(
+      transducer: sherpa_onnx.OnlineTransducerModelConfig(encoder: encoder, decoder: decoder, joiner: joiner),
       tokens: tokens,
-      modelType: 'whisper',
       numThreads: 2,
+      modelType: 'zipformer2',
     ),
     decodingMethod: 'greedy_search',
+    enableEndpoint: true,
+    rule1MinTrailingSilence: 2.4,
+    rule2MinTrailingSilence: 1.2,
+    rule3MinUtteranceLength: 20.0,
   );
 
-  _sherpaRecognizer = sherpa_onnx.OfflineRecognizer(config);
+  _sherpaRecognizer = sherpa_onnx.OnlineRecognizer(config);
   return _sherpaRecognizer!;
 }
 
-// ─── Transcribe one WAV chunk via sherpa-onnx ────────────────────────────────
+// ─── Isolate message types ────────────────────────────────────────────────────
 
-Future<List<Segment>> transcribeFile((String filePath, sherpa_onnx.OfflineRecognizer recognizer) input) async {
+class _TranscribeRequest {
+  final String filePath;
+  final String tempDirPath; // ← resolved on the main isolate, passed in
+  final SendPort sendPort;
 
-  var filePath = input.$1;
-  var recognizer = input.$2;
-
-  sherpa_onnx.initBindings();
-
-  final bytes = await File(filePath).readAsBytes();
-
-  final samples = convertBytesToFloat32(bytes);
-
-  final stream = recognizer.createStream();
-  stream.acceptWaveform(samples: samples, sampleRate: 16000);
-  recognizer.decode(stream);
-  final result = recognizer.getResult(stream);
-  stream.free();
-
-  if (result.text.trim().isEmpty) return [];
-
-  // sherpa-onnx Whisper returns per-token timestamps in result.timestamps.
-  // We reconstruct word-level segments from them; when unavailable we fall
-  // back to a single segment covering the whole chunk.
-  if (result.timestamps.isNotEmpty &&
-      result.timestamps.length == result.tokens.length) {
-    final segments = <Segment>[];
-    final buffer = StringBuffer();
-    double segStart = result.timestamps.first.toDouble();
-    double segEnd   = segStart;
-
-    for (int i = 0; i < result.tokens.length; i++) {
-      final token = result.tokens[i];
-      final t     = result.timestamps[i].toDouble();
-      buffer.write(token);
-      segEnd = t;
-
-      final text = buffer.toString().trim();
-      if (text.endsWith('.') || text.endsWith('!') || text.endsWith('?')) {
-        segments.add(Segment(
-          text:   text,
-          fromTs: Duration(milliseconds: (segStart * 1000).round()),
-          toTs:   Duration(milliseconds: (segEnd   * 1000).round()),
-        ));
-        buffer.clear();
-        if (i + 1 < result.timestamps.length) {
-          segStart = result.timestamps[i + 1].toDouble();
-        }
-      }
-    }
-
-    // Remaining text without a terminal punctuation becomes the last segment
-    if (buffer.isNotEmpty) {
-      segments.add(Segment(
-        text:   buffer.toString().trim(),
-        fromTs: Duration(milliseconds: (segStart * 1000).round()),
-        toTs:   Duration(milliseconds: (segEnd   * 1000).round()),
-      ));
-    }
-
-    return segments;
-  }
-
-  // Fallback: single segment
-  return [
-    Segment(
-      text:   result.text.trim(),
-      fromTs: Duration.zero,
-      toTs:   Duration(seconds: samples.length ~/ 16000),
-    ),
-  ];
+  const _TranscribeRequest(this.filePath, this.tempDirPath, this.sendPort);
 }
 
-Float32List convertBytesToFloat32(Uint8List bytes, [endian = Endian.little]) {
-  final values = Float32List(bytes.length ~/ 2);
+// ─── Public API ──────────────────────────────────────────────────────────────
 
-  final data = ByteData.view(bytes.buffer);
+/// Streams [Segment]s as they are recognised. Runs decode in a separate
+/// isolate so the UI stays responsive.
+Stream<Segment> transcribeStream(String wavPath) async* {
+  // Resolve the temp dir HERE on the main isolate before spawning.
+  final tempDir = await getTemporaryDirectory();
 
-  for (var i = 0; i < bytes.length; i += 2) {
-    int short = data.getInt16(i, endian);
-    values[i ~/ 2] = short / 32768.0;
+  final receivePort = ReceivePort();
+  final isolate = await Isolate.spawn(_transcribeIsolateEntry, _TranscribeRequest(wavPath, tempDir.path, receivePort.sendPort), errorsAreFatal: true);
+
+  await for (final msg in receivePort) {
+    if (msg == null) break; // null sentinel = done
+    yield msg as Segment;
   }
 
+  receivePort.close();
+  isolate.kill();
+}
+
+// ─── Isolate entry point ─────────────────────────────────────────────────────
+
+void _transcribeIsolateEntry(_TranscribeRequest req) async {
+  sherpa_onnx.initBindings();
+
+  // Use the temp dir path passed from the main isolate — no platform channels.
+  final recognizer = _createRecognizerInIsolate(req.tempDirPath);
+
+  final bytes = await File(req.filePath).readAsBytes();
+  final samples = _convertBytesToFloat32(bytes);
+
+  const int sampleRate = 16000;
+  const int chunkSize = sampleRate ~/ 10; // 100 ms per step
+
+  final stream = recognizer.createStream();
+  String prevText = '';
+  double chunkStartSec = 0.0;
+
+  for (int offset = 0; offset < samples.length; offset += chunkSize) {
+    final end = (offset + chunkSize).clamp(0, samples.length);
+    final chunk = samples.sublist(offset, end);
+
+    stream.acceptWaveform(samples: chunk, sampleRate: sampleRate);
+
+    while (recognizer.isReady(stream)) {
+      recognizer.decode(stream);
+    }
+
+    if (recognizer.isEndpoint(stream)) {
+      final result = recognizer.getResult(stream);
+      final text = result.text.trim();
+
+      if (text.isNotEmpty && text != prevText) {
+        final fromMs = (chunkStartSec * 1000).round();
+        final toMs = ((offset + chunk.length) / sampleRate * 1000).round();
+        req.sendPort.send(
+          Segment(
+            text: text,
+            fromTs: Duration(milliseconds: fromMs),
+            toTs: Duration(milliseconds: toMs),
+          ),
+        );
+        prevText = text;
+      }
+
+      recognizer.reset(stream);
+      chunkStartSec = (offset + chunk.length) / sampleRate;
+    }
+  }
+
+  // Flush remaining hypothesis after end-of-audio.
+  stream.inputFinished();
+  while (recognizer.isReady(stream)) {
+    recognizer.decode(stream);
+  }
+  final finalResult = recognizer.getResult(stream);
+  final finalText = finalResult.text.trim();
+  if (finalText.isNotEmpty && finalText != prevText) {
+    final fromMs = (chunkStartSec * 1000).round();
+    final toMs = (samples.length / sampleRate * 1000).round();
+    req.sendPort.send(
+      Segment(
+        text: finalText,
+        fromTs: Duration(milliseconds: fromMs),
+        toTs: Duration(milliseconds: toMs),
+      ),
+    );
+  }
+
+  stream.free();
+  req.sendPort.send(null); // sentinel: done
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/// Creates the recognizer using only the pre-resolved [tempDirPath].
+/// No platform channels used — safe to call inside an isolate.
+sherpa_onnx.OnlineRecognizer _createRecognizerInIsolate(String tempDirPath) {
+  const modelDir = 'assets/kroko-de';
+
+  String p(String name) => '$tempDirPath/$modelDir/$name';
+
+  final config = sherpa_onnx.OnlineRecognizerConfig(
+    model: sherpa_onnx.OnlineModelConfig(
+      transducer: sherpa_onnx.OnlineTransducerModelConfig(
+        encoder: p('encoder.int8.onnx'),
+        decoder: p('decoder.int8.onnx'),
+        joiner: p('joiner.int8.onnx'),
+      ),
+      tokens: p('tokens.txt'),
+      numThreads: 2,
+      modelType: 'zipformer2',
+    ),
+    decodingMethod: 'greedy_search',
+    enableEndpoint: true,
+    rule1MinTrailingSilence: 2.4,
+    rule2MinTrailingSilence: 1.2,
+    rule3MinUtteranceLength: 20.0,
+  );
+
+  return sherpa_onnx.OnlineRecognizer(config);
+}
+
+Float32List _convertBytesToFloat32(Uint8List bytes, [Endian endian = Endian.little]) {
+  final values = Float32List(bytes.length ~/ 2);
+  final data = ByteData.view(bytes.buffer);
+  for (var i = 0; i < bytes.length; i += 2) {
+    values[i ~/ 2] = data.getInt16(i, endian) / 32768.0;
+  }
   return values;
 }

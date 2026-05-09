@@ -226,9 +226,18 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/icon/
-    - assets/sherpa-onnx-whisper-small/small-encoder.int8.onnx
-    - assets/sherpa-onnx-whisper-small/small-decoder.int8.onnx
-    - assets/sherpa-onnx-whisper-small/small-tokens.txt
+#    - assets/kroko-de/decoder.onnx
+#    - assets/kroko-de/encoder.onnx
+#    - assets/kroko-de/joiner.onnx
+#    - assets/kroko-de/tokens.txt
+    - assets/kroko-de/decoder.int8.onnx
+    - assets/kroko-de/encoder.int8.onnx
+    - assets/kroko-de/joiner.int8.onnx
+    - assets/kroko-de/tokens.txt
+#    - assets/sherpa-onnx-whisper-small/small-encoder.int8.onnx
+#    - assets/sherpa-onnx-whisper-small/small-decoder.int8.onnx
+#    - assets/sherpa-onnx-whisper-small/small-tokens.txt
+
   #   - images/a_dot_ham.jpeg
 
   # An image asset can refer to one or more resolution-specific "variants", see
