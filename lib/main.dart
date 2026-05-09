@@ -282,7 +282,7 @@ class _HomePageState extends State<HomePage> {
                             });
                           },
                           audioJumpTo:  (int ms) async {
-                            await playerController.seekTo((ms/playerController.maxDuration).toInt());
+                            await playerController.seekTo(ms);
                           },
                         ),
                       ) : Center(

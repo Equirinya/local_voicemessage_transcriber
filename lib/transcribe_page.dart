@@ -112,11 +112,20 @@ class _TranscribePageState extends State<TranscribePage> {
                     child: Padding(
                       padding: const EdgeInsets.only(bottom: 16.0),
                       child: Wrap(
-                        children: segments.map((seg) {
-                          return TapRegion(
-                            onTapInside: (_) => widget.audioJumpTo(seg.fromTs.inMilliseconds),
-                            child: Text('${seg.text} ', style: Theme.of(context).textTheme.bodyLarge),
-                          );
+                        children: segments.expand<Widget>((seg) {
+                          final words = seg.text.trim().split(RegExp(r'\s+'));
+                          if (words.isEmpty) return <Widget>[];
+                          final msDuration = seg.toTs.inMilliseconds - seg.fromTs.inMilliseconds;
+                          final msPerWord = msDuration / words.length;
+                          return words.indexed.map((entry) {
+                            final i = entry.$1;
+                            final word = entry.$2;
+                            final wordTs = seg.fromTs.inMilliseconds + (i * msPerWord).round();
+                            return TapRegion(
+                              onTapInside: (_) => widget.audioJumpTo(wordTs),
+                              child: Text('$word ', style: Theme.of(context).textTheme.bodyLarge),
+                            );
+                          });
                         }).toList(),
                       ),
                     ),

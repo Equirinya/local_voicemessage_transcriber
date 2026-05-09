@@ -36,10 +36,10 @@ Future<sherpa_onnx.OnlineRecognizer> getSherpaRecognizer() async {
     return file.path;
   }
 
-  const modelDir = 'assets/kroko-de';
-  final encoder = await assetPath('$modelDir/encoder.int8.onnx');
-  final decoder = await assetPath('$modelDir/decoder.int8.onnx');
-  final joiner = await assetPath('$modelDir/joiner.int8.onnx');
+  const modelDir = 'assets/kroko-de-fp32';
+  final encoder = await assetPath('$modelDir/encoder.onnx');
+  final decoder = await assetPath('$modelDir/decoder.onnx');
+  final joiner = await assetPath('$modelDir/joiner.onnx');
   final tokens = await assetPath('$modelDir/tokens.txt');
 
   final config = sherpa_onnx.OnlineRecognizerConfig(
@@ -51,9 +51,9 @@ Future<sherpa_onnx.OnlineRecognizer> getSherpaRecognizer() async {
     ),
     decodingMethod: 'greedy_search',
     enableEndpoint: true,
-    rule1MinTrailingSilence: 2.4,
+    rule1MinTrailingSilence: 1.5,
     rule2MinTrailingSilence: 1.2,
-    rule3MinUtteranceLength: 20.0,
+    rule3MinUtteranceLength: 90.0,
   );
 
   _sherpaRecognizer = sherpa_onnx.OnlineRecognizer(config);
@@ -168,16 +168,16 @@ void _transcribeIsolateEntry(_TranscribeRequest req) async {
 /// Creates the recognizer using only the pre-resolved [tempDirPath].
 /// No platform channels used — safe to call inside an isolate.
 sherpa_onnx.OnlineRecognizer _createRecognizerInIsolate(String tempDirPath) {
-  const modelDir = 'assets/kroko-de';
+  const modelDir = 'assets/kroko-de-fp32';
 
   String p(String name) => '$tempDirPath/$modelDir/$name';
 
   final config = sherpa_onnx.OnlineRecognizerConfig(
     model: sherpa_onnx.OnlineModelConfig(
       transducer: sherpa_onnx.OnlineTransducerModelConfig(
-        encoder: p('encoder.int8.onnx'),
-        decoder: p('decoder.int8.onnx'),
-        joiner: p('joiner.int8.onnx'),
+        encoder: p('encoder.onnx'),
+        decoder: p('decoder.onnx'),
+        joiner: p('joiner.onnx'),
       ),
       tokens: p('tokens.txt'),
       numThreads: 2,
@@ -185,9 +185,9 @@ sherpa_onnx.OnlineRecognizer _createRecognizerInIsolate(String tempDirPath) {
     ),
     decodingMethod: 'greedy_search',
     enableEndpoint: true,
-    rule1MinTrailingSilence: 2.4,
+    rule1MinTrailingSilence: 1.5,
     rule2MinTrailingSilence: 1.2,
-    rule3MinUtteranceLength: 20.0,
+    rule3MinUtteranceLength: 90.0,
   );
 
   return sherpa_onnx.OnlineRecognizer(config);
