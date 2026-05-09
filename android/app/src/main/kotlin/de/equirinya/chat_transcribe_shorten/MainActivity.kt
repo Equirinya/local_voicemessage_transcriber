@@ -1,5 +1,5 @@
 package de.equirinya.chat_transcribe_shorten
 
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 
-class MainActivity: FlutterActivity()
+class MainActivity : FlutterFragmentActivity()

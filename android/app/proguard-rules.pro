@@ -1,0 +1,3 @@
+-keep class com.redalpha.flutter_sharing_intent.** { *; }
+-keep class com.techind.flutter_sharing_intent.** { *; }
+-keep class com.antonkarpenko.ffmpegkit.** { *; }
