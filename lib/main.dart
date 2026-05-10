@@ -9,6 +9,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_sharing_intent/flutter_sharing_intent.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
 import 'package:system_theme/system_theme.dart';
+import 'package:file_picker/file_picker.dart';
+
+import 'model_manager.dart';
+import 'model_settings.dart';
 
 // also include file picker on app start
 // also for web and then include links to appstore playstore and neostore
@@ -29,9 +33,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: SystemTheme.accentColor.accent),
-      ),
+      theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: SystemTheme.accentColor.accent)),
       darkTheme: ThemeData(
         brightness: Brightness.dark,
         colorScheme: ColorScheme.fromSeed(seedColor: SystemTheme.accentColor.dark, brightness: Brightness.dark),
@@ -52,7 +54,6 @@ class _HomePageState extends State<HomePage> {
   late StreamSubscription _intentDataStreamSubscription;
 
   bool initialized = false;
-  String? model;
 
   String? filePath;
   String? transcription;
@@ -62,12 +63,12 @@ class _HomePageState extends State<HomePage> {
   int page = 0;
   int selectedText = 0;
 
-
   PlayerWaveStyle waveStyle = PlayerWaveStyle(scaleFactor: 120);
   PlayerController playerController = PlayerController();
   late StreamSubscription<PlayerState> playerStateSubscription;
   late StreamSubscription<int> playerDurationSubscription;
   Duration playerTime = Duration.zero;
+  double playerRate = 1.0;
 
   @override
   void initState() {
@@ -83,19 +84,27 @@ class _HomePageState extends State<HomePage> {
   }
 
   void asyncInit() async {
-    await Future.delayed(const Duration(milliseconds: 500));
+
+    final active = await ModelManager.getActiveModel();
+    if (active == null) {
+      await ModelDownloadDialog.show(context);
+    }
+    await Future.delayed(const Duration(milliseconds: 250));
 
     // For sharing images coming from outside the app while the app is in the memory
-    _intentDataStreamSubscription = FlutterSharingIntent.instance.getMediaStream().listen((value) {
-      newFile(value.firstOrNull?.value);
-      if (kDebugMode || true) {
-        print("Shared: getMediaStream ${value.map((f) => f.value).join(",")}");
-      }
-    }, onError: (err) {
-      if (kDebugMode || true) {
-        print("getIntentDataStream error: $err");
-      }
-    });
+    _intentDataStreamSubscription = FlutterSharingIntent.instance.getMediaStream().listen(
+      (value) {
+        newFile(value.firstOrNull?.value);
+        if (kDebugMode || true) {
+          print("Shared: getMediaStream ${value.map((f) => f.value).join(",")}");
+        }
+      },
+      onError: (err) {
+        if (kDebugMode || true) {
+          print("getIntentDataStream error: $err");
+        }
+      },
+    );
 
     // For sharing images coming from outside the app while the app is closed
     FlutterSharingIntent.instance.getInitialSharing().then((value) {
@@ -180,71 +189,92 @@ class _HomePageState extends State<HomePage> {
         index: page,
         children: [
           SafeArea(
-                  child: Column(
+            child: filePath != null
+                ? Column(
                     mainAxisSize: MainAxisSize.max,
                     children: [
-                      filePath != null
-                          ? Padding(
-                              padding: const EdgeInsets.all(8.0),
-                              child: IntrinsicWidth(
-                                child: Card(
-                                  color: Theme.of(context).colorScheme.tertiaryContainer,
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
+                      Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: IntrinsicWidth(
+                          child: Card(
+                            color: Theme.of(context).colorScheme.tertiaryContainer,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      onPressed: () async {
+                                        playerController.playerState.isPlaying
+                                            ? await playerController.pausePlayer()
+                                            : await playerController.startPlayer();
+                                        setState(() {});
+                                      },
+                                      icon: Icon(playerController.playerState.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded),
+                                    ),
+                                    AudioFileWaveforms(
+                                      playerController: playerController,
+                                      waveformType: WaveformType.fitWidth,
+                                      animationDuration: const Duration(milliseconds: 100),
+                                      playerWaveStyle: waveStyle,
+                                      enableSeekGesture: true,
+                                      size: Size(MediaQuery.of(context).size.width * 0.9 - (4 * 48), MediaQuery.of(context).size.height * 0.05),
+                                    ),
+                                    IconButton(
+                                      onPressed: () async {
+                                        final current = await playerController.getDuration(DurationType.current);
+                                        await playerController.seekTo(current - 10000);
+                                      },
+                                      icon: const Icon(Icons.replay_10_rounded),
+                                    ),
+                                    IconButton(
+                                      onPressed: () async {
+                                        final current = await playerController.getDuration(DurationType.current);
+                                        await playerController.seekTo(current + 10000);
+                                      },
+                                      icon: const Icon(Icons.forward_10_rounded),
+                                    ),
+                                    //set Player rate to 1x, 1.5x, 2x
+                                    IconButton(
+                                      onPressed: () async {
+                                        playerRate = playerRate == 1.0
+                                            ? 1.5
+                                            : playerRate == 1.5
+                                            ? 2.0
+                                            : 1.0;
+                                        await playerController.setRate(playerRate);
+                                        setState(() {});
+                                      },
+                                      icon: Text("${playerRate}x", style: Theme.of(context).textTheme.labelSmall),
+                                    ),
+                                  ],
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          IconButton(
-                                            onPressed: () async {
-                                              playerController.playerState.isPlaying
-                                                  ? await playerController.pausePlayer()
-                                                  : await playerController.startPlayer();
-                                              setState(() {});
-                                            },
-                                            icon: Icon(
-                                              playerController.playerState.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                            ),
-                                          ),
-                                          AudioFileWaveforms(
-                                            playerController: playerController,
-                                            waveformType: WaveformType.fitWidth,
-                                            animationDuration: const Duration(milliseconds: 100),
-                                            playerWaveStyle: waveStyle,
-                                            enableSeekGesture: true,
-                                            size: Size(MediaQuery.of(context).size.width * 0.7, MediaQuery.of(context).size.height * 0.05),
-                                          ),
-                                          //jump ten forwards/backwards, set speed
-
-                                        ],
+                                      Text(
+                                        filePath!.split("/").last,
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.labelSmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
                                       ),
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                                        child: Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Text(
-                                              filePath!.split("/").last,
-                                              style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                                            ),
-                                            Text(
-                                              "${playerTime.inHours > 0 ? "${playerTime.inHours}:" : ""}${playerTime.inMinutes.remainder(60).toString().padLeft(2, "0")}:${playerTime.inSeconds.remainder(60).toString().padLeft(2, "0")}",
-                                              style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                                            ),
-                                          ],
-                                        ),
-                                      )
+                                      Text(
+                                        "${playerTime.inHours > 0 ? "${playerTime.inHours}:" : ""}${playerTime.inMinutes.remainder(60).toString().padLeft(2, "0")}:${playerTime.inSeconds.remainder(60).toString().padLeft(2, "0")}",
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.labelSmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                      ),
                                     ],
                                   ),
                                 ),
-                              ),
-                            )
-                          : SizedBox(
-                              height: MediaQuery.of(context).size.height * 0.10,
-                              child: const Center(
-                                child: Text("No File selected. Share a voice message to get started."),
-                              ),
+                              ],
                             ),
+                          ),
+                        ),
+                      ),
                       // SegmentedButton(
                       //   multiSelectionEnabled: false,
                       //   segments: const <ButtonSegment<int>>[
@@ -272,49 +302,67 @@ class _HomePageState extends State<HomePage> {
                       //     if (selectedText >= 1 && [transcription, shortened, summary][selectedText] == null) [transcribe, shorten, summarize][selectedText]();
                       //   },
                       // ),
-                      filePath != null || kDebugMode ? Expanded(
+                      Expanded(
                         child: TranscribePage(
                           key: ValueKey(filePath),
-                          filePath: filePath??"",
+                          filePath: filePath!,
                           onTranscriptionComplete: (text) {
                             setState(() {
                               transcription = text;
                             });
                           },
-                          audioJumpTo:  (int ms) async {
+                          audioJumpTo: (int ms) async {
                             await playerController.seekTo(ms);
                           },
                         ),
-                      ) : Center(
-                        child: Text(
-                          "Share a voice message to get started.",
-                        ),
                       ),
                     ],
+                  )
+                : Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Center(child: Text("Share a voice message to get started or select from your files:")),
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(onPressed: () async {
+                        final result = await FilePicker.pickFiles(
+                          type: FileType.audio,
+                          allowMultiple: false,
+                        );
+
+                        if (result != null && result.files.single.path != null) {
+                          setState(() {
+                            filePath = result.files.single.path;
+                          });
+                        }
+                      }, icon: const Icon(Icons.audio_file), label: const Text("Select File")),
+                    ],
                   ),
-                ),
-      ],
+          ),
+          SafeArea(child: ListView(
+
+          ))
+        ],
       ),
-      // bottomNavigationBar: BottomNavigationBar(
-      //   currentIndex: page,
-      //   onTap: (index) {
-      //     setState(() {
-      //       page = index;
-      //     });
-      //   },
-      //   showSelectedLabels: false,
-      //   showUnselectedLabels: false,
-      //   items: const [
-      //     BottomNavigationBarItem(
-      //       icon: Icon(Icons.home_rounded),
-      //       label: "Home",
-      //     ),
-      //     BottomNavigationBarItem(
-      //       icon: Icon(Icons.settings_rounded),
-      //       label: "Settings",
-      //     ),
-      //   ],
-      // ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: page,
+        onTap: (index) {
+          setState(() {
+            page = index;
+          });
+        },
+        showSelectedLabels: false,
+        showUnselectedLabels: false,
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home_rounded),
+            label: "Home",
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.settings_rounded),
+            label: "Settings",
+          ),
+        ],
+      ),
     );
   }
 }

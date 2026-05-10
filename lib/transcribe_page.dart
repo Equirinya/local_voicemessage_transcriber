@@ -8,6 +8,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'model_manager.dart';
+import 'model_settings.dart';
+
 class TranscribePage extends StatefulWidget {
   const TranscribePage({super.key, required this.filePath, required this.onTranscriptionComplete, required this.audioJumpTo});
 
@@ -49,9 +52,21 @@ class _TranscribePageState extends State<TranscribePage> {
 
     String? convertedPath;
 
+    var active = await ModelManager.getActiveModel();
+    if (active == null) {
+      // no model selected or not downloaded → show dialog
+      var result = await ModelDownloadDialog.show(context);
+      if (result == null) {
+        setState(() {
+          loading = false;
+        });
+        return;
+      }else{
+        active = await ModelManager.getActiveModel();
+      }
+    }
+
     try {
-      // Ensure model files are extracted to temp dir before spawning isolate.
-      await getSherpaRecognizer();
 
       // Convert input to 16 kHz mono PCM WAV — still needed for arbitrary formats.
       final tempDir = await getTemporaryDirectory();
@@ -63,7 +78,7 @@ class _TranscribePageState extends State<TranscribePage> {
       }
 
       // Stream segments as they arrive from the isolate.
-      await for (final seg in transcribeStream(convertedPath)) {
+      await for (final seg in transcribeStream(convertedPath, active!.path)) {
         if (!mounted) break;
         setState(() => segments.add(seg));
       }
@@ -130,7 +145,8 @@ class _TranscribePageState extends State<TranscribePage> {
                       ),
                     ),
                   ),
-                  if (loading) const Center(child: CupertinoActivityIndicator()),
+                  if (loading) const Center(child: CupertinoActivityIndicator())
+                  else if (segments.isEmpty) FilledButton(onPressed: () => transcribe(), child: const Text('Transcribe'))
                 ],
               ),
             ),

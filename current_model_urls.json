@@ -1,7 +1,9 @@
 [
   {
-    "id": "kroko_de_fp32",
-    "name": "Kroko Deutsch (fp32)",
+    "id": "kroko_de",
+    "name": "Kroko Deutsch",
+    "license": "CC-BY-SA 4.0",
+    "repository": "https://huggingface.co/Banafo/Kroko-ASR",
     "encoder": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-de-kroko-2025-08-06/resolve/main/encoder.onnx",
     "decoder": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-de-kroko-2025-08-06/resolve/main/decoder.onnx",
     "joiner":  "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-de-kroko-2025-08-06/resolve/main/joiner.onnx",
