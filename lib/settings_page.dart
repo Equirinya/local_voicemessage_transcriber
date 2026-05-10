@@ -50,9 +50,7 @@ class _SettingsPageState extends State<SettingsPage> {
       body: ListView(
         padding: const EdgeInsets.only(bottom: 128),
         children: [
-          SettingsSubPageCategory(title: "ASR Model", settings: [
-            ModelSettingsPage(onSelectionChanged: (ModelDefinition? selected) {},),
-          ]),
+          ModelSettingsPage(onSelectionChanged: (ModelDefinition? selected) {}),
           SettingsSubPageCategory(title: "About", settings: [
             FutureBuilder<String>(
               future: ModelManager.downloadedModelsAttribution(),
@@ -700,7 +698,7 @@ class AboutSettingsTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       title: Text(title ?? "About"),
-      subtitle: Text(subtitle ?? "app information and legalese"),
+      subtitle: Text(subtitle ?? "App Information and Legalese"),
       leading: Icon(icon ?? Icons.info_outline),
       onTap: () async {
         PackageInfo packageInfo = await PackageInfo.fromPlatform();

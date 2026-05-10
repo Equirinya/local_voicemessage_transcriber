@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:audio_waveforms/audio_waveforms.dart';
+import 'package:chat_transcribe_shorten/settings_page.dart';
 import 'package:chat_transcribe_shorten/transcribe_page.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
@@ -84,7 +85,6 @@ class _HomePageState extends State<HomePage> {
   }
 
   void asyncInit() async {
-
     final active = await ModelManager.getActiveModel();
     if (active == null) {
       await ModelDownloadDialog.show(context);
@@ -321,26 +321,30 @@ class _HomePageState extends State<HomePage> {
                 : Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Center(child: Text("Share a voice message to get started or select from your files:")),
+                      Center(
+                        child: SizedBox(
+                          width: MediaQuery.of(context).size.width * 0.6,
+                          child: Text("Share a voice message to get started or select from your files:", textAlign: TextAlign.center,),
+                        ),
+                      ),
                       const SizedBox(height: 16),
-                      ElevatedButton.icon(onPressed: () async {
-                        final result = await FilePicker.pickFiles(
-                          type: FileType.audio,
-                          allowMultiple: false,
-                        );
+                      FilledButton.icon(
+                        onPressed: () async {
+                          final result = await FilePicker.pickFiles(type: FileType.audio, allowMultiple: false);
 
-                        if (result != null && result.files.single.path != null) {
-                          setState(() {
-                            filePath = result.files.single.path;
-                          });
-                        }
-                      }, icon: const Icon(Icons.audio_file), label: const Text("Select File")),
+                          if (result != null && result.files.single.path != null) {
+                            setState(() {
+                              filePath = result.files.single.path;
+                            });
+                          }
+                        },
+                        icon: const Icon(Icons.audio_file),
+                        label: const Text("Select File"),
+                      ),
                     ],
                   ),
           ),
-          SafeArea(child: ListView(
-
-          ))
+          SettingsPage(),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
@@ -353,14 +357,8 @@ class _HomePageState extends State<HomePage> {
         showSelectedLabels: false,
         showUnselectedLabels: false,
         items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home_rounded),
-            label: "Home",
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.settings_rounded),
-            label: "Settings",
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.home_rounded), label: "Home"),
+          BottomNavigationBarItem(icon: Icon(Icons.settings_rounded), label: "Settings"),
         ],
       ),
     );

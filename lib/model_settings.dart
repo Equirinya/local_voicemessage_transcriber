@@ -31,7 +31,10 @@ class _ModelSettingsPageState extends State<ModelSettingsPage> {
   }
 
   Future<void> _load() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final catalog = await ModelManager.fetchCatalog();
       final selectedId = await ModelManager.getSelectedId();
@@ -45,9 +48,12 @@ class _ModelSettingsPageState extends State<ModelSettingsPage> {
         _selectedId = selectedId;
         _loading = false;
       });
-    } catch (e,st) {
-      if(kDebugMode) print('Catalog load error: $e\n$st');
-      setState(() { _error = e.toString(); _loading = false; });
+    } catch (e, st) {
+      if (kDebugMode) print('Catalog load error: $e\n$st');
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
     }
   }
 
@@ -64,19 +70,18 @@ class _ModelSettingsPageState extends State<ModelSettingsPage> {
         def: def,
         cancelToken: token,
         onProgress: (progress, file) {
-          if (mounted) setState(() {
-            _downloading[def.id] = progress;
-            _currentFile[def.id] = file;
-          });
+          if (mounted)
+            setState(() {
+              _downloading[def.id] = progress;
+              _currentFile[def.id] = file;
+            });
         },
       );
       _downloaded[def.id] = true;
-    } on DioException catch (e,st) {
-      if(kDebugMode) print('Download error for ${def.id}: $e\n$st');
+    } on DioException catch (e, st) {
+      if (kDebugMode) print('Download error for ${def.id}: $e\n$st');
       if (!CancelToken.isCancel(e) && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Download failed: ${e.message}')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Download failed: ${e.message}')));
       }
       // Clean up partial on cancel
       if (CancelToken.isCancel(e)) {
@@ -84,11 +89,12 @@ class _ModelSettingsPageState extends State<ModelSettingsPage> {
         _downloaded[def.id] = false;
       }
     } finally {
-      if (mounted) setState(() {
-        _downloading.remove(def.id);
-        _tokens.remove(def.id);
-        _currentFile.remove(def.id);
-      });
+      if (mounted)
+        setState(() {
+          _downloading.remove(def.id);
+          _tokens.remove(def.id);
+          _currentFile.remove(def.id);
+        });
     }
   }
 
@@ -111,65 +117,64 @@ class _ModelSettingsPageState extends State<ModelSettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return  _loading
+    return _loading
         ? const Center(child: CupertinoActivityIndicator())
         : _error != null
         ? Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text('Failed to load catalog: $_error'),
-          TextButton(onPressed: _load, child: const Text('Retry')),
-        ],
-      ),
-    )
-        : Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: DropdownButtonFormField<String?>(
-            value: _selectedId,
-            decoration: const InputDecoration(
-              labelText: 'Active model',
-              border: OutlineInputBorder(),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Failed to load catalog: $_error'),
+                TextButton(onPressed: _load, child: const Text('Retry')),
+              ],
             ),
-            items: [
-              const DropdownMenuItem(value: null, child: Text('None')),
-              ..._catalog
-                  .where((d) => _downloaded[d.id] == true)
-                  .map((d) => DropdownMenuItem(
-                value: d.id,
-                child: Text(d.name),
-              )),
-            ],
-            onChanged: (id) => _selectModel(id),
-          ),
-        ),
-        const Divider(),
-        Expanded(
-          child: ListView.builder(
-            itemCount: _catalog.length,
-            itemBuilder: (context, i) {
-              final def = _catalog[i];
-              final isDownloaded = _downloaded[def.id] ?? false;
-              final isDownloading = _downloading.containsKey(def.id);
-              final progress = _downloading[def.id] ?? 0.0;
-              final file = _currentFile[def.id] ?? '';
+          )
+        : Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: DropdownButtonFormField<String?>(
+                  value: _selectedId,
+                  decoration: const InputDecoration(labelText: 'Active model', border: OutlineInputBorder()),
+                  items: [
+                    ..._catalog.where((d) => _downloaded[d.id] == true).map((d) => DropdownMenuItem(value: d.id, child: Text(d.name))),
+                  ],
+                  onChanged: (id) => _selectModel(id),
+                ),
+              ),
+              const Divider(),
+              Column(
+                children: _catalog.map((def) {
+                  final isDownloaded = _downloaded[def.id] ?? false;
+                  final isDownloading = _downloading.containsKey(def.id);
+                  final progress = _downloading[def.id] ?? 0.0;
+                  final file = _currentFile[def.id] ?? '';
+                  final isActive = _selectedId == def.id;
 
-              return ListTile(
-                title: Text(def.name),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // License chip
-                    Wrap(
+                  return ListTile(
+                    title: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
+                        Text(
+                          def.name,
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: isActive
+                                ? Theme.of(context).colorScheme.primary
+                                : isDownloaded
+                                ? null
+                                : Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
                         InkWell(
                           onTap: () => launchUrl(Uri.parse(def.repository)),
                           child: Chip(
                             padding: EdgeInsets.zero,
-                            labelPadding: const EdgeInsets.symmetric(horizontal: 6),
+                            labelPadding: const EdgeInsets.only(right: 8),
+
                             label: Text(
                               def.license,
                               style: Theme.of(context).textTheme.labelSmall,
@@ -179,48 +184,41 @@ class _ModelSettingsPageState extends State<ModelSettingsPage> {
                         ),
                       ],
                     ),
-                    // Status / progress row (your existing code)
-                    if (isDownloading) ...[
-                      const SizedBox(height: 4),
-                      LinearProgressIndicator(value: progress),
-                      const SizedBox(height: 2),
-                      Text(
-                        '$file  ${(progress * 100).toStringAsFixed(0)}%',
-                        style: Theme.of(context).textTheme.bodySmall,
+                    subtitle: isDownloading
+                        ? Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          LinearProgressIndicator(value: progress),
+                          const SizedBox(height: 2),
+                          Text(
+                            '$file  ${(progress * 100).toStringAsFixed(0)}%',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
                       ),
-                    ] else if (isDownloaded)
-                      Text(
-                        _selectedId == def.id ? 'Active' : 'Downloaded',
-                        style: TextStyle(
-                          color: _selectedId == def.id
-                              ? Theme.of(context).colorScheme.primary
-                              : null,
-                        ),
-                      )
-                    else
-                      const Text('Not downloaded'),
-                  ],
-                ),
-                trailing: isDownloading
-                    ? IconButton(
-                  icon: const Icon(Icons.cancel),
-                  onPressed: () => _tokens[def.id]?.cancel(),
-                )
-                    : isDownloaded
-                    ? IconButton(
-                  icon: const Icon(Icons.delete_outline),
-                  onPressed: () => _delete(def),
-                )
-                    : IconButton(
-                  icon: const Icon(Icons.download),
-                  onPressed: () => _startDownload(def),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
+                    )
+                        : null,
+                    trailing: isDownloading
+                        ? IconButton(
+                      icon: const Icon(Icons.cancel),
+                      onPressed: () => _tokens[def.id]?.cancel(),
+                    )
+                        : isDownloaded
+                        ? IconButton(
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () => _delete(def),
+                    )
+                        : IconButton(
+                      icon: const Icon(Icons.download),
+                      onPressed: () => _startDownload(def),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          );
   }
 }
 
@@ -229,11 +227,7 @@ class ModelDownloadDialog extends StatefulWidget {
 
   /// Returns the selected+downloaded ModelDefinition, or null if dismissed.
   static Future<ModelDefinition?> show(BuildContext context) {
-    return showDialog<ModelDefinition>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const ModelDownloadDialog(),
-    );
+    return showDialog<ModelDefinition>(context: context, barrierDismissible: false, builder: (_) => const ModelDownloadDialog());
   }
 
   @override
@@ -271,9 +265,12 @@ class _ModelDownloadDialogState extends State<ModelDownloadDialog> {
         _selected = catalog.isNotEmpty ? catalog.first : null;
         _loadingCatalog = false;
       });
-    } catch (e,st) {
-      if(kDebugMode) print('Catalog load error: $e\n$st');
-      setState(() { _error = e.toString(); _loadingCatalog = false; });
+    } catch (e, st) {
+      if (kDebugMode) print('Catalog load error: $e\n$st');
+      setState(() {
+        _error = e.toString();
+        _loadingCatalog = false;
+      });
     }
   }
 
@@ -283,31 +280,43 @@ class _ModelDownloadDialogState extends State<ModelDownloadDialog> {
     final token = CancelToken();
     _cancelToken = token;
 
-    setState(() { _downloading = true; _progress = 0; _error = null; });
+    setState(() {
+      _downloading = true;
+      _progress = 0;
+      _error = null;
+    });
 
     try {
       await ModelManager.downloadModel(
         def: def,
         cancelToken: token,
         onProgress: (progress, file) {
-          if (mounted) setState(() {
-            _progress = progress;
-            _currentFile = file;
-          });
+          if (mounted)
+            setState(() {
+              _progress = progress;
+              _currentFile = file;
+            });
         },
       );
       await ModelManager.setSelectedId(def.id);
-      setState(() { _downloading = false; _done = true; });
-    } on DioException catch (e,st) {
-      if(kDebugMode) print('Download error: $e\n$st');
+      setState(() {
+        _downloading = false;
+        _done = true;
+      });
+    } on DioException catch (e, st) {
+      if (kDebugMode) print('Download error: $e\n$st');
       if (CancelToken.isCancel(e)) {
         await ModelManager.deleteModel(def.id);
-        if (mounted) setState(() { _downloading = false; });
+        if (mounted)
+          setState(() {
+            _downloading = false;
+          });
       } else {
-        if (mounted) setState(() {
-          _downloading = false;
-          _error = e.message;
-        });
+        if (mounted)
+          setState(() {
+            _downloading = false;
+            _error = e.message;
+          });
       }
     }
   }
@@ -323,66 +332,34 @@ class _ModelDownloadDialogState extends State<ModelDownloadDialog> {
             : _error != null && !_downloading
             ? Text('Error: $_error')
             : Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Select a model to download. This is required for transcription.',
-            ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<ModelDefinition>(
-              value: _selected,
-              decoration: const InputDecoration(
-                labelText: 'Model',
-                border: OutlineInputBorder(),
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Select a model to download. This is required for transcription.'),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<ModelDefinition>(
+                    value: _selected,
+                    decoration: const InputDecoration(labelText: 'Model', border: OutlineInputBorder()),
+                    items: _catalog.map((d) => DropdownMenuItem(value: d, child: Text(d.name))).toList(),
+                    onChanged: _downloading || _done ? null : (d) => setState(() => _selected = d),
+                  ),
+                  if (_downloading || _done) ...[
+                    const SizedBox(height: 16),
+                    LinearProgressIndicator(value: _done ? 1.0 : _progress),
+                    const SizedBox(height: 4),
+                    Text(
+                      _done ? 'Download complete!' : '$_currentFile  ${(_progress * 100).toStringAsFixed(0)}%',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ],
               ),
-              items: _catalog
-                  .map((d) => DropdownMenuItem(
-                value: d,
-                child: Text(d.name),
-              ))
-                  .toList(),
-              onChanged: _downloading || _done
-                  ? null
-                  : (d) => setState(() => _selected = d),
-            ),
-            if (_downloading || _done) ...[
-              const SizedBox(height: 16),
-              LinearProgressIndicator(
-                value: _done ? 1.0 : _progress,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                _done
-                    ? 'Download complete!'
-                    : '$_currentFile  ${(_progress * 100).toStringAsFixed(0)}%',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-          ],
-        ),
       ),
       actions: [
-        if (!_downloading && !_done)
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(null),
-            child: const Text('Cancel'),
-          ),
-        if (_downloading)
-          TextButton(
-            onPressed: () => _cancelToken?.cancel(),
-            child: const Text('Cancel download'),
-          ),
-        if (!_done)
-          ElevatedButton(
-            onPressed: _loadingCatalog || _downloading ? null : _download,
-            child: const Text('Download'),
-          ),
-        if (_done)
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(_selected),
-            child: const Text('Close'),
-          ),
+        if (!_downloading && !_done) TextButton(onPressed: () => Navigator.of(context).pop(null), child: const Text('Cancel')),
+        if (_downloading) TextButton(onPressed: () => _cancelToken?.cancel(), child: const Text('Cancel download')),
+        if (!_done) ElevatedButton(onPressed: _loadingCatalog || _downloading ? null : _download, child: const Text('Download')),
+        if (_done) ElevatedButton(onPressed: () => Navigator.of(context).pop(_selected), child: const Text('Close')),
       ],
     );
   }
