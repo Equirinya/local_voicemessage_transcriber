@@ -1,12 +1,46 @@
 [
   {
+    "id": "kroko_en",
+    "name": "Kroko English",
+    "license": "CC-BY-SA 4.0",
+    "repository": "https://huggingface.co/Banafo/Kroko-ASR",
+    "encoder": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/resolve/main/encoder.onnx",
+    "decoder": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/resolve/main/decoder.onnx",
+    "joiner":  "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/resolve/main/joiner.onnx",
+    "tokens":  "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/resolve/main/tokens.txt"
+  },
+
+  {
     "id": "kroko_de",
-    "name": "Kroko Deutsch",
+    "name": "Kroko German",
     "license": "CC-BY-SA 4.0",
     "repository": "https://huggingface.co/Banafo/Kroko-ASR",
     "encoder": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-de-kroko-2025-08-06/resolve/main/encoder.onnx",
     "decoder": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-de-kroko-2025-08-06/resolve/main/decoder.onnx",
     "joiner":  "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-de-kroko-2025-08-06/resolve/main/joiner.onnx",
     "tokens":  "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-de-kroko-2025-08-06/resolve/main/tokens.txt"
+  },
+
+  {
+    "id": "kroko_es",
+    "name": "Kroko Spanish",
+    "license": "CC-BY-SA 4.0",
+    "repository": "https://huggingface.co/Banafo/Kroko-ASR",
+    "encoder": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-es-kroko-2025-08-06/resolve/main/encoder.onnx",
+    "decoder": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-es-kroko-2025-08-06/resolve/main/decoder.onnx",
+    "joiner":  "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-es-kroko-2025-08-06/resolve/main/joiner.onnx",
+    "tokens":  "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-es-kroko-2025-08-06/resolve/main/tokens.txt"
+  },
+
+  {
+    "id": "kroko_fr",
+    "name": "Kroko French",
+    "license": "CC-BY-SA 4.0",
+    "repository": "https://huggingface.co/Banafo/Kroko-ASR",
+    "encoder": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-fr-kroko-2025-08-06/resolve/main/encoder.onnx",
+    "decoder": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-fr-kroko-2025-08-06/resolve/main/decoder.onnx",
+    "joiner":  "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-fr-kroko-2025-08-06/resolve/main/joiner.onnx",
+    "tokens":  "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-fr-kroko-2025-08-06/resolve/main/tokens.txt"
   }
+
 ]
