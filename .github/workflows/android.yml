@@ -1,0 +1,137 @@
+###necessary github action repository variables:
+#BUNDLE_ID
+#KEY_ALIAS
+#FLUTTER_VERSION
+
+###necessary github action repository secrets:
+#GOOGLE_PLAY_SERVICE_ACCOUNT_JSON  see see https://github.com/marketplace/actions/upload-android-release-to-play-store
+#KEYSTORE_BASE64
+#KEYSTORE_PASSWORD
+#KEY_PASSWORD
+
+name: Android Build and Deploy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  android_deployment:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      # Step 1: Checkout Code
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Step 2: Setup Java
+      - name: Set up Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # Step 3: Set up Flutter SDK
+      - name: Set up Flutter SDK
+        uses: flutter-actions/setup-flutter@v3
+        env:
+          FLUTTER_VERSION: ${{ vars.FLUTTER_VERSION }}
+        with:
+          channel: stable
+          version: ${{ env.FLUTTER_VERSION }} # Keep this up to date with flutter --version
+
+      # Step 4: Install Dependencies
+      - name: Install Dependencies
+        run: |
+          flutter clean
+          flutter pub get
+          flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      # Step 5: Setup Keystore
+      - name: Decode Keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          echo "$env:KEYSTORE_BASE64" | Out-File -FilePath keystore_base64.txt
+          certutil -decode keystore_base64.txt android/app/keystore.jks
+
+      # Step 6: Create key.properties
+      - name: Create key.properties
+        run: |
+          Set-Content -Path android/key.properties -Value @"
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          keyAlias=${{ vars.KEY_ALIAS }}
+          storeFile=keystore.jks
+          "@
+
+      # Step 7: Parse Build Number and Name from pubspec.yaml
+      - name: Parse Build Number and Name
+        id: version
+        run: |
+          $VERSION_LINE = (Get-Content pubspec.yaml | Select-String '^version:').ToString()
+          $VERSION = ($VERSION_LINE -split ' ')[1].Split('+')[0]
+          $BUILD_NUMBER = ($VERSION_LINE -split '\+')[1]
+          echo "VERSION=$VERSION" >> $env:GITHUB_ENV
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> $env:GITHUB_ENV
+          echo "version=$VERSION" >> $env:GITHUB_OUTPUT
+          echo "build_number=$BUILD_NUMBER" >> $env:GITHUB_OUTPUT
+
+      # Step 8: Build APK
+      - name: Build APK
+        run: |
+          flutter build apk --release `
+            --build-number=$env:BUILD_NUMBER `
+            --build-name=$env:VERSION
+
+      # Step 9: Build App Bundle
+      - name: Build App Bundle
+        run: |
+          flutter build appbundle --release `
+            --build-number=$env:BUILD_NUMBER `
+            --build-name=$env:VERSION
+
+      # Step 10: Create Release and Upload Assets
+      - name: Create Release and Upload Assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $VERSION = "${{ steps.version.outputs.version }}"
+          $TAG_NAME = "v$VERSION"
+          $APK_PATH = "build/app/outputs/flutter-apk/app-release.apk"
+          $AAB_PATH = "build/app/outputs/bundle/release/app-release.aab"
+
+          # 1. Check if release already exists.
+          # If it does, just upload the assets to the existing release.
+          if (gh release view "$TAG_NAME" 2>$null) {
+            Write-Output "Release $TAG_NAME exists. Uploading assets..."
+            gh release upload "$TAG_NAME" "$APK_PATH" --clobber
+            gh release upload "$TAG_NAME" "$AAB_PATH" --clobber
+          } else {
+            # 2. Create new release and attach assets in one step
+            Write-Output "Creating release $TAG_NAME..."
+            gh release create "$TAG_NAME" "$APK_PATH" "$AAB_PATH" `
+              --title "Release $TAG_NAME" `
+              --draft=true `
+              --prerelease=false `
+              --generate-notes
+          }
+
+      # Step 11: Upload AAB to Google Play (Internal Testing)
+      - name: Upload to Google Play
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: ${{ vars.BUNDLE_ID }}
+          releaseFiles: build/app/outputs/bundle/release/app-release.aab
+          track: internal
+          status: completed
+
+      # Step 12: Cleanup
+      - name: Cleanup
+        if: always()
+        run: |
+          Remove-Item -Path android/app/keystore.jks -ErrorAction SilentlyContinue
+          Remove-Item -Path android/key.properties -ErrorAction SilentlyContinue
+          Remove-Item -Path keystore_base64.txt -ErrorAction SilentlyContinue

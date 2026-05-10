@@ -1,0 +1,197 @@
+#inspired by:
+#https://canopas.com/automate-flutter-ios-app-deployment-with-github-actions-and-codemagic-cli-4d063ea6ef08
+#https://blog.okaryo.studio/en/20240911-flutter-ios-firebase-app-distribution-github-actions-not-auto-signing/
+
+### setup in appstoreconnect:
+#if not exisiting yet, create a distribution certificate: https://mzansibytes.com/2021/08/28/create-apple-developer-certificates-on-windows/, then [Convert]::ToBase64String([IO.File]::ReadAllBytes("ExportedCertificate.pfx")) | Out-File "ExportedCertificate_base64.txt"
+
+#create Identifier:  (APP-IDs/APP/) add Push Notifications, Sign In with Apple
+#then change bundle id in Step 8 below
+#create Provisioning Profile: Distribution/App Store Connect then [Convert]::ToBase64String([IO.File]::ReadAllBytes("AppName.mobileprovision")) | Out-File "AppName_base64.txt"
+#copy Provisioning Profile name to Step 5 & 8 below
+#create App in App Store Connect
+
+
+### necessary github action repository secrets:
+#TEAM_ID: https://appstoreconnect.apple.com/access/users
+
+#from: https://appstoreconnect.apple.com/access/integrations/api:
+#APPSTORE_ISSUER_ID
+#APPSTORE_API_KEY_ID
+#APPSTORE_API_PRIVATE_KEY: open p8 File with text editor and copy content (with start and end lines)
+
+#BUILD_CERTIFICATE_BASE64 #distribution certificate in base64 format (can be the same for many apps)
+#P12_PASSWORD #password for distribution certificate
+
+#BUILD_PROVISION_PROFILE_BASE64
+
+#KEYCHAIN_PASSWORD #can be set freely
+
+###necessary github action repository variables:
+#BUNDLE_ID
+#PROVISIONING_PROFILE_NAME
+#DEPLOYMENT_TARGET
+#FLUTTER_VERSION
+
+###make sure ios/Runner/ExportOptions-Template.plist exists
+
+##make sure ios/Runner.xcodeproj/project.pbxproj is configured correctly, that should be set by the ExportOption.plist but are currently not, see https://github.com/flutter/flutter/issues/113977
+#for all configurations where the bundleIdentifier does not end in RunnerTests these should be set:
+
+#CODE_SIGN_IDENTITY = "Apple Development";
+#"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution";  #or IOS Distribution or Iphone Distribution
+#CODE_SIGN_STYLE = Manual;
+#PRODUCT_BUNDLE_IDENTIFIER = ; #set
+#DEVELOPMENT_TEAM = "";
+#"DEVELOPMENT_TEAM[sdk=iphoneos*]" = ; #set
+#IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+#PROVISIONING_PROFILE_SPECIFIER = "";
+#"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = ""; #set
+
+
+### if youre using FirebaseFirestore including the precombiled binaries in the Podfile speeds up the build a lot: https://github.com/invertase/firestore-ios-sdk-frameworks
+
+name: iOS Build and Deploy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ios_deployment:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      # Step 1: Checkout Code
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Step 2: Set up Flutter SDK
+      - name: Set up Flutter SDK
+        uses: flutter-actions/setup-flutter@v3
+        env:
+          FLUTTER_VERSION: ${{ vars.FLUTTER_VERSION }}
+        with:
+          channel: stable
+          version: ${{ env.FLUTTER_VERSION }} # Keep this up to date with flutter --version
+
+      # Step 3: Install Dependencies
+      - name: Install Dependencies
+        run: |
+          flutter clean
+          flutter pub get
+          flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      # Step 4: Initialize Keychain
+      - name: Initialize Keychain
+        env:
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $RUNNER_TEMP/app-signing.keychain-db
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $RUNNER_TEMP/app-signing.keychain-db
+          security list-keychain -d user -s $RUNNER_TEMP/app-signing.keychain-db
+
+      # Step 5: Configure Provisioning Profile
+      - name: Configure Provisioning Profile
+        env:
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
+          PROVISIONING_PROFILE_NAME: ${{ vars.PROVISIONING_PROFILE_NAME }}
+        run: |
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode > ~/Library/MobileDevice/Provisioning\ Profiles/$PROVISIONING_PROFILE_NAME.mobileprovision
+
+      # Step 6: Configure Distribution Certificate
+      - name: Configure Distribution Certificate
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          echo "$BUILD_CERTIFICATE_BASE64" | base64 --decode > /tmp/certificate.p12
+          security import /tmp/certificate.p12 -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $RUNNER_TEMP/app-signing.keychain-db
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" $RUNNER_TEMP/app-signing.keychain-db
+          # List the certificate to verify it's there
+          security find-identity -v -p codesigning $RUNNER_TEMP/app-signing.keychain-db
+
+      # Step 7: Parse Build Number and Name from pubspec.yaml
+      - name: Parse Build Number and Name
+        id: version
+        run: |
+          VERSION_LINE=$(grep '^version:' pubspec.yaml)
+          VERSION=$(echo $VERSION_LINE | cut -d' ' -f2 | cut -d'+' -f1)
+          BUILD_NUMBER=$(echo $VERSION_LINE | cut -d'+' -f2)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_ENV
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "build_number=$BUILD_NUMBER" >> $GITHUB_OUTPUT
+
+      # Step 8: Generate ExportOptions.plist from Template
+      - name: Generate ExportOptions.plist
+        env:
+          EXPORT_METHOD: "app-store-connect"
+          EXPORT_DESTINATION: "export"
+          BUNDLE_ID: ${{ vars.BUNDLE_ID }}
+          PROVISIONING_PROFILE: ${{ vars.PROVISIONING_PROFILE_NAME }}
+          TEAM_ID: ${{ secrets.TEAM_ID }}
+        run: |
+          envsubst < ios/Runner/ExportOptions-Template.plist > ios/Runner/ExportOptions.plist
+
+      # Step 9: Build IPA (can add --verbose for more logging)
+      - name: Build IPA
+        run: |
+          flutter build ipa \
+            --release \
+            --build-number=$BUILD_NUMBER \
+            --build-name=$VERSION \
+            --export-options-plist=ios/Runner/ExportOptions.plist
+        timeout-minutes: 30
+
+      # Step 10: Create API Key File
+      - name: Create API Key File
+        env:
+          APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.private_keys
+          echo "$APPSTORE_API_KEY" > ~/.private_keys/AuthKey_${{ secrets.APPSTORE_API_KEY_ID }}.p8
+          chmod 600 ~/.private_keys/AuthKey_${{ secrets.APPSTORE_API_KEY_ID }}.p8
+
+      # Step 11: Upload IPA to App Store Connect
+      - name: Upload to App Store Connect
+        env:
+          API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          API_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+        run: |
+          xcrun altool --upload-app -f build/ios/ipa/*.ipa -t ios --apiKey "$API_KEY_ID" --apiIssuer "$API_ISSUER_ID"
+
+
+      - name: Create Release and Upload Asset
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG_NAME="v$VERSION"
+          IPA_PATH=$(find build/ios/ipa -name "*.ipa" | head -n 1)
+          
+          # 1. Check if release already exists.
+          # If it does, just upload the asset to the existing release.
+          if gh release view "$TAG_NAME" > /dev/null 2>&1; then
+            echo "Release $TAG_NAME exists. Uploading asset..."
+            gh release upload "$TAG_NAME" "$IPA_PATH" --clobber
+          else
+            # 2. Create new release and attach asset in one step
+            echo "Creating release $TAG_NAME..."
+            gh release create "$TAG_NAME" "$IPA_PATH" \
+              --title "Release $TAG_NAME" \
+              --draft=true \
+              --prerelease=false \
+              --generate-notes
+          fi
+
+      # Step 13: Cleanup Keychain and Profiles
+      - name: Cleanup
+        if: ${{ always() }}
+        run: |
+          security delete-keychain $RUNNER_TEMP/app-signing.keychain-db
+          rm -rf ~/Library/MobileDevice/Provisioning\ Profiles
+          rm -rf ~/.private_keys
