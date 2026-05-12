@@ -296,7 +296,7 @@ google-services.json
 
 /lib/test.dart
 
-/ios
+#/ios
 /linux
 /macos
 /windows
