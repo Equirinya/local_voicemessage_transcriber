@@ -4,8 +4,6 @@ import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-//reference: https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models
-
 const _catalogUrl =
     'https://raw.githubusercontent.com/Equirinya/local_voicemessage_transcriber/master/current_model_urls.json';
 
@@ -23,6 +21,7 @@ class ModelDefinition {
   final String joinerUrl;
   final String tokensUrl;
   final String? vadUrl;
+  final String modelType;
   final bool streaming;
 
   const ModelDefinition({
@@ -35,6 +34,7 @@ class ModelDefinition {
     required this.joinerUrl,
     required this.tokensUrl,
     this.vadUrl,
+    this.modelType = 'transducer',
     this.streaming = false,
   });
 
@@ -48,6 +48,7 @@ class ModelDefinition {
     joinerUrl: j['joiner'],
     tokensUrl: j['tokens'],
     vadUrl: j['vad'] as String?,
+    modelType: j['model_type'] as String? ?? 'transducer',
     streaming: j['streaming'] as bool? ?? false,
   );
 
@@ -61,6 +62,7 @@ class ModelDefinition {
     'joiner': joinerUrl,
     'tokens': tokensUrl,
     if (vadUrl != null) 'vad': vadUrl,
+    'model_type': modelType,
     'streaming': streaming,
   };
 
@@ -82,8 +84,6 @@ class _ModelFile {
 // ─── ModelManager ────────────────────────────────────────────────────────────
 
 class ModelManager {
-  // ─── Directory helpers ─────────────────────────────────────────────────────
-
   static Future<Directory> _dirForId(String id) async {
     final base = await getApplicationDocumentsDirectory();
     final dir = Directory('${base.path}/models/$id');
@@ -91,21 +91,16 @@ class ModelManager {
     return dir;
   }
 
-  /// Path where a model's metadata is stored locally.
   static Future<File> _metaFileForId(String id) async {
     final dir = await _dirForId(id);
     return File('${dir.path}/meta.json');
   }
 
-  // ─── Metadata persistence ──────────────────────────────────────────────────
-
-  /// Saves [def] to disk so the model is discoverable without network access.
   static Future<void> _saveMeta(ModelDefinition def) async {
     final file = await _metaFileForId(def.id);
     await file.writeAsString(jsonEncode(def.toJson()));
   }
 
-  /// Reads locally stored metadata for [id], or null if none exists.
   static Future<ModelDefinition?> _loadMeta(String id) async {
     try {
       final file = await _metaFileForId(id);
@@ -126,26 +121,14 @@ class ModelManager {
     return list.map((e) => ModelDefinition.fromJson(e)).toList();
   }
 
-  /// Fetches the remote catalog and refreshes local metadata for every model
-  /// that is already downloaded. Safe to call at startup or on app resume.
-  ///
-  /// Returns the catalog on success, or null if the network is unavailable.
   static Future<List<ModelDefinition>> fetchCatalogAndRefreshDownloaded() async {
-    final List<ModelDefinition> catalog;
-    catalog = await fetchCatalog();
-
-    // Build a quick lookup so we don't scan the list repeatedly.
+    final catalog = await fetchCatalog();
     final catalogById = {for (final d in catalog) d.id: d};
-
-    // Only update metadata for models whose files are actually on disk.
     final downloaded = await downloadedModels();
     for (final local in downloaded) {
       final remote = catalogById[local.id];
-      if (remote != null) {
-        await _saveMeta(remote);
-      }
+      if (remote != null) await _saveMeta(remote);
     }
-
     return catalog;
   }
 
@@ -159,10 +142,6 @@ class ModelManager {
     return true;
   }
 
-  /// Returns all downloaded models using only local metadata — no network call.
-  ///
-  /// Models that were removed from the remote catalog still appear here as long
-  /// as their files remain on disk.
   static Future<List<ModelDefinition>> downloadedModels() async {
     try {
       final base = await getApplicationDocumentsDirectory();
@@ -175,9 +154,7 @@ class ModelManager {
         final id = entity.path.split('/').last;
         final def = await _loadMeta(id);
         if (def == null) continue;
-        if (await isDownloaded(id, def.files)) {
-          result.add(def);
-        }
+        if (await isDownloaded(id, def.files)) result.add(def);
       }
       return result;
     } catch (_) {
@@ -185,33 +162,21 @@ class ModelManager {
     }
   }
 
-  /// Attribution string for all locally downloaded models — works offline.
-  ///
-  /// Reflects the metadata that was current at download time for each model.
   static Future<String> downloadedModelsAttribution() async {
     final models = await downloadedModels();
     if (models.isEmpty) return '';
-    final entries = models.map(
-          (m) => '${m.name} – ${m.license} (${m.repository})',
-    );
+    final entries = models.map((m) => '${m.name} – ${m.license} (${m.repository})');
     return 'Speech Models:\n${entries.join('\n')}';
   }
 
   // ─── Active model ──────────────────────────────────────────────────────────
 
-  /// Returns the active model using only local metadata — no network call.
-  ///
-  /// Fast: reads one small JSON file from disk rather than fetching the remote
-  /// catalog and scanning all models.
   static Future<({ModelDefinition def, String path})?> getActiveModel() async {
     final selectedId = await getSelectedId();
     if (selectedId == null) return null;
-
     final def = await _loadMeta(selectedId);
     if (def == null) return null;
-
     if (!await isDownloaded(selectedId, def.files)) return null;
-
     final dir = await _dirForId(selectedId);
     return (def: def, path: dir.path);
   }
@@ -249,15 +214,12 @@ class ModelManager {
       onProgress((i + 1) / files.length, f.name);
     }
 
-    // Persist metadata only after all files are fully downloaded.
     await _saveMeta(def);
   }
 
   static Future<void> deleteModel(String id) async {
     final dir = await _dirForId(id);
     if (await dir.exists()) await dir.delete(recursive: true);
-    // meta.json lives inside the directory, so it's removed automatically.
-
     final selectedId = await getSelectedId();
     if (selectedId == id) await setSelectedId(null);
   }

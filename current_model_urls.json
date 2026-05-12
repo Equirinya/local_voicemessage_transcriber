@@ -3,6 +3,7 @@
     "id": "kroko_en",
     "name": "Kroko English",
     "streaming": true,
+    "model_type": "zipformer2",
     "license": "CC-BY-SA 4.0",
     "repository": "https://huggingface.co/Banafo/Kroko-ASR",
     "encoder": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/resolve/main/encoder.onnx",
@@ -15,6 +16,7 @@
     "id": "kroko_de",
     "name": "Kroko German",
     "streaming": true,
+    "model_type": "zipformer2",
     "license": "CC-BY-SA 4.0",
     "repository": "https://huggingface.co/Banafo/Kroko-ASR",
     "encoder": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-de-kroko-2025-08-06/resolve/main/encoder.onnx",
@@ -27,6 +29,7 @@
     "id": "kroko_es",
     "name": "Kroko Spanish",
     "streaming": true,
+    "model_type": "zipformer2",
     "license": "CC-BY-SA 4.0",
     "repository": "https://huggingface.co/Banafo/Kroko-ASR",
     "encoder": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-es-kroko-2025-08-06/resolve/main/encoder.onnx",
@@ -39,6 +42,7 @@
     "id": "kroko_fr",
     "name": "Kroko French",
     "streaming": true,
+    "model_type": "zipformer2",
     "license": "CC-BY-SA 4.0",
     "repository": "https://huggingface.co/Banafo/Kroko-ASR",
     "encoder": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-fr-kroko-2025-08-06/resolve/main/encoder.onnx",
@@ -50,6 +54,7 @@
     "id": "nemo_de_fastconformer_hybrid_large_pc_int8",
     "name": "NeMo German",
     "streaming": false,
+    "model_type": "nemo_transducer",
     "license": "CC-BY-SA 4.0",
     "repository": "https://huggingface.co/nvidia/stt_de_fastconformer_hybrid_large_pc",
     "encoder": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-transducer-stt_de_fastconformer_hybrid_large_pc-int8/resolve/main/encoder.int8.onnx",
@@ -57,6 +62,5 @@
     "joiner":  "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-transducer-stt_de_fastconformer_hybrid_large_pc-int8/resolve/main/joiner.int8.onnx",
     "tokens":  "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-transducer-stt_de_fastconformer_hybrid_large_pc-int8/resolve/main/tokens.txt",
     "vad": "https://huggingface.co/deepghs/silero-vad-onnx/resolve/main/silero_vad.onnx",
-    "model_type": "nemo_transducer"
   }
 ]
