@@ -22,17 +22,22 @@ class _TranscribeRequest {
   final String filePath;
   final String modelDirPath;
   final SendPort sendPort;
+  final bool streaming; // true → OnlineRecognizer, false → VAD + OfflineRecognizer
 
-  const _TranscribeRequest(this.filePath, this.modelDirPath, this.sendPort);
+  const _TranscribeRequest(this.filePath, this.modelDirPath, this.sendPort, this.streaming);
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
-Stream<Segment> transcribeStream(String wavPath, String modelDirPath) async* {
+Stream<Segment> transcribeStream(String wavPath, String modelDirPath, {bool streaming = true}) async* {
+  assert(
+  streaming || await File('$modelDirPath/silero_vad.onnx').exists(),
+  'Offline mode requires silero_vad.onnx in modelDirPath',
+  );
   final receivePort = ReceivePort();
   final isolate = await Isolate.spawn(
     _transcribeIsolateEntry,
-    _TranscribeRequest(wavPath, modelDirPath, receivePort.sendPort),
+    _TranscribeRequest(wavPath, modelDirPath, receivePort.sendPort, streaming),
     errorsAreFatal: true,
   );
   await for (final msg in receivePort) {
@@ -48,6 +53,21 @@ Stream<Segment> transcribeStream(String wavPath, String modelDirPath) async* {
 void _transcribeIsolateEntry(_TranscribeRequest req) async {
   sherpa_onnx.initBindings();
 
+  final bytes = await File(req.filePath).readAsBytes();
+  final samples = _convertBytesToFloat32(bytes);
+
+  if (req.streaming) {
+    await _runOnline(req, samples);
+  } else {
+    await _runOfflineWithVad(req, samples);
+  }
+
+  req.sendPort.send(null); // sentinel: done
+}
+
+// ─── Online (streaming) path ──────────────────────────────────────────────────
+
+Future<void> _runOnline(_TranscribeRequest req, Float32List samples) async {
   String p(String name) => '${req.modelDirPath}/$name';
 
   final config = sherpa_onnx.OnlineRecognizerConfig(
@@ -69,12 +89,8 @@ void _transcribeIsolateEntry(_TranscribeRequest req) async {
   );
 
   final recognizer = sherpa_onnx.OnlineRecognizer(config);
-
-  final bytes = await File(req.filePath).readAsBytes();
-  final samples = _convertBytesToFloat32(bytes);
-
   const int sampleRate = 16000;
-  const int chunkSize = sampleRate ~/ 10; // 100 ms per step
+  const int chunkSize = sampleRate ~/ 10; // 100 ms
 
   final stream = recognizer.createStream();
   String prevText = '';
@@ -85,51 +101,126 @@ void _transcribeIsolateEntry(_TranscribeRequest req) async {
     final chunk = samples.sublist(offset, end);
 
     stream.acceptWaveform(samples: chunk, sampleRate: sampleRate);
-
-    while (recognizer.isReady(stream)) {
-      recognizer.decode(stream);
-    }
+    while (recognizer.isReady(stream)) recognizer.decode(stream);
 
     if (recognizer.isEndpoint(stream)) {
-      final result = recognizer.getResult(stream);
-      final text = result.text.trim();
-
+      final text = recognizer.getResult(stream).text.trim();
       if (text.isNotEmpty && text != prevText) {
-        final fromMs = (chunkStartSec * 1000).round();
-        final toMs = ((offset + chunk.length) / sampleRate * 1000).round();
         req.sendPort.send(Segment(
           text: text,
-          fromTs: Duration(milliseconds: fromMs),
-          toTs: Duration(milliseconds: toMs),
+          fromTs: Duration(milliseconds: (chunkStartSec * 1000).round()),
+          toTs: Duration(milliseconds: ((offset + chunk.length) / sampleRate * 1000).round()),
         ));
         prevText = text;
       }
-
       recognizer.reset(stream);
       chunkStartSec = (offset + chunk.length) / sampleRate;
     }
   }
 
-  // Flush remaining hypothesis after end-of-audio.
+  // Flush tail.
   stream.inputFinished();
-  while (recognizer.isReady(stream)) {
-    recognizer.decode(stream);
-  }
-  final finalResult = recognizer.getResult(stream);
-  final finalText = finalResult.text.trim();
+  while (recognizer.isReady(stream)) recognizer.decode(stream);
+  final finalText = recognizer.getResult(stream).text.trim();
   if (finalText.isNotEmpty && finalText != prevText) {
-    final fromMs = (chunkStartSec * 1000).round();
-    final toMs = (samples.length / sampleRate * 1000).round();
     req.sendPort.send(Segment(
       text: finalText,
-      fromTs: Duration(milliseconds: fromMs),
-      toTs: Duration(milliseconds: toMs),
+      fromTs: Duration(milliseconds: (chunkStartSec * 1000).round()),
+      toTs: Duration(milliseconds: (samples.length / 16000 * 1000).round()),
     ));
   }
 
   stream.free();
   recognizer.free();
-  req.sendPort.send(null); // sentinel: done
+}
+
+// ─── Offline + VAD path ───────────────────────────────────────────────────────
+
+Future<void> _runOfflineWithVad(_TranscribeRequest req, Float32List samples) async {
+  String p(String name) => '${req.modelDirPath}/$name';
+  const int sampleRate = 16000;
+
+  // VAD
+  final vadConfig = sherpa_onnx.VadModelConfig(
+    sileroVad: sherpa_onnx.SileroVadModelConfig(
+      model: p('silero_vad.onnx'),
+      threshold: 0.5,
+      minSpeechDuration: 0.25,
+      minSilenceDuration: 0.5,
+    ),
+    sampleRate: sampleRate,
+    numThreads: 2,
+  );
+  final vad = sherpa_onnx.VoiceActivityDetector(config: vadConfig, bufferSizeInSeconds: 60);
+
+  // Offline recognizer (transducer — swap model block for Whisper/Paraformer as needed)
+  final asrConfig = sherpa_onnx.OfflineRecognizerConfig(
+    model: sherpa_onnx.OfflineModelConfig(
+      transducer: sherpa_onnx.OfflineTransducerModelConfig(
+        encoder: p('encoder.onnx'),
+        decoder: p('decoder.onnx'),
+        joiner:  p('joiner.onnx'),
+      ),
+      tokens: p('tokens.txt'),
+      numThreads: 2,
+    ),
+    decodingMethod: 'greedy_search',
+  );
+  final recognizer = sherpa_onnx.OfflineRecognizer(asrConfig);
+
+  final windowSize = vadConfig.sileroVad.windowSize; // samples per VAD step (e.g. 512)
+
+  for (int offset = 0; offset < samples.length; offset += windowSize) {
+    final end = (offset + windowSize).clamp(0, samples.length);
+    vad.acceptWaveform(samples.sublist(offset, end));
+
+    while (!vad.isEmpty()) {
+      final seg = vad.front(); // SpeechSegment { samples, start }
+      vad.pop();
+
+      final stream = recognizer.createStream();
+      stream.acceptWaveform(samples: seg.samples, sampleRate: sampleRate);
+      recognizer.decode(stream);
+
+      final text = recognizer.getResult(stream).text.trim();
+      if (text.isNotEmpty) {
+        final fromMs = (seg.start / sampleRate * 1000).round();
+        final toMs = ((seg.start + seg.samples.length) / sampleRate * 1000).round();
+        req.sendPort.send(Segment(
+          text: text,
+          fromTs: Duration(milliseconds: fromMs),
+          toTs: Duration(milliseconds: toMs),
+        ));
+      }
+      stream.free();
+    }
+  }
+
+  // Flush any trailing speech the VAD hasn't emitted yet.
+  vad.flush();
+  while (!vad.isEmpty()) {
+    final seg = vad.front();
+    vad.pop();
+
+    final stream = recognizer.createStream();
+    stream.acceptWaveform(samples: seg.samples, sampleRate: sampleRate);
+    recognizer.decode(stream);
+
+    final text = recognizer.getResult(stream).text.trim();
+    if (text.isNotEmpty) {
+      final fromMs = (seg.start / sampleRate * 1000).round();
+      final toMs = ((seg.start + seg.samples.length) / sampleRate * 1000).round();
+      req.sendPort.send(Segment(
+        text: text,
+        fromTs: Duration(milliseconds: fromMs),
+        toTs: Duration(milliseconds: toMs),
+      ));
+    }
+    stream.free();
+  }
+
+  vad.free();
+  recognizer.free();
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

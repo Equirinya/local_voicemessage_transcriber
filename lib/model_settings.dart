@@ -36,7 +36,7 @@ class _ModelSettingsPageState extends State<ModelSettingsPage> {
       _error = null;
     });
     try {
-      final catalog = await ModelManager.fetchCatalog();
+      final catalog = await ModelManager.fetchCatalogAndRefreshDownloaded();
       final selectedId = await ModelManager.getSelectedId();
       final downloaded = <String, bool>{};
       for (final def in catalog) {

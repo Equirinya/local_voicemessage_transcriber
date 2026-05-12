@@ -22,6 +22,8 @@ class ModelDefinition {
   final String decoderUrl;
   final String joinerUrl;
   final String tokensUrl;
+  final String? vadUrl;
+  final bool streaming;
 
   const ModelDefinition({
     required this.id,
@@ -32,6 +34,8 @@ class ModelDefinition {
     required this.decoderUrl,
     required this.joinerUrl,
     required this.tokensUrl,
+    this.vadUrl,
+    this.streaming = false,
   });
 
   factory ModelDefinition.fromJson(Map<String, dynamic> j) => ModelDefinition(
@@ -43,6 +47,8 @@ class ModelDefinition {
     decoderUrl: j['decoder'],
     joinerUrl: j['joiner'],
     tokensUrl: j['tokens'],
+    vadUrl: j['vad'] as String?,
+    streaming: j['streaming'] as bool? ?? false,
   );
 
   Map<String, dynamic> toJson() => {
@@ -54,6 +60,8 @@ class ModelDefinition {
     'decoder': decoderUrl,
     'joiner': joinerUrl,
     'tokens': tokensUrl,
+    if (vadUrl != null) 'vad': vadUrl,
+    'streaming': streaming,
   };
 
   List<_ModelFile> get files => [
@@ -61,6 +69,7 @@ class ModelDefinition {
     _ModelFile('decoder.onnx', decoderUrl),
     _ModelFile('joiner.onnx', joinerUrl),
     _ModelFile('tokens.txt', tokensUrl),
+    if (vadUrl != null) _ModelFile('silero_vad.onnx', vadUrl!),
   ];
 }
 
@@ -115,6 +124,29 @@ class ModelManager {
     final resp = await dio.get<String>(_catalogUrl);
     final list = jsonDecode(resp.data!) as List;
     return list.map((e) => ModelDefinition.fromJson(e)).toList();
+  }
+
+  /// Fetches the remote catalog and refreshes local metadata for every model
+  /// that is already downloaded. Safe to call at startup or on app resume.
+  ///
+  /// Returns the catalog on success, or null if the network is unavailable.
+  static Future<List<ModelDefinition>> fetchCatalogAndRefreshDownloaded() async {
+    final List<ModelDefinition> catalog;
+    catalog = await fetchCatalog();
+
+    // Build a quick lookup so we don't scan the list repeatedly.
+    final catalogById = {for (final d in catalog) d.id: d};
+
+    // Only update metadata for models whose files are actually on disk.
+    final downloaded = await downloadedModels();
+    for (final local in downloaded) {
+      final remote = catalogById[local.id];
+      if (remote != null) {
+        await _saveMeta(remote);
+      }
+    }
+
+    return catalog;
   }
 
   // ─── Download state ────────────────────────────────────────────────────────
@@ -182,27 +214,6 @@ class ModelManager {
 
     final dir = await _dirForId(selectedId);
     return (def: def, path: dir.path);
-  }
-
-  /// Like [getActiveModel] but also refreshes local metadata from the catalog
-  /// when a network connection is available (e.g. for attribution updates).
-  ///
-  /// Falls back to [getActiveModel] on any network error.
-  static Future<({ModelDefinition def, String path})?> getActiveModelRefreshing() async {
-    try {
-      final catalog = await fetchCatalog();
-      final selectedId = await getSelectedId();
-      if (selectedId == null) return null;
-
-      final matches = catalog.where((d) => d.id == selectedId);
-      if (matches.isNotEmpty) {
-        // Persist refreshed metadata so attribution stays current.
-        await _saveMeta(matches.first);
-      }
-    } catch (_) {
-      // Network unavailable — fall through to offline path below.
-    }
-    return getActiveModel();
   }
 
   // ─── Download / delete ─────────────────────────────────────────────────────
