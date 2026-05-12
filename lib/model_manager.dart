@@ -45,6 +45,17 @@ class ModelDefinition {
     tokensUrl: j['tokens'],
   );
 
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'license': license,
+    'repository': repository,
+    'encoder': encoderUrl,
+    'decoder': decoderUrl,
+    'joiner': joinerUrl,
+    'tokens': tokensUrl,
+  };
+
   List<_ModelFile> get files => [
     _ModelFile('encoder.onnx', encoderUrl),
     _ModelFile('decoder.onnx', decoderUrl),
@@ -62,6 +73,8 @@ class _ModelFile {
 // ─── ModelManager ────────────────────────────────────────────────────────────
 
 class ModelManager {
+  // ─── Directory helpers ─────────────────────────────────────────────────────
+
   static Future<Directory> _dirForId(String id) async {
     final base = await getApplicationDocumentsDirectory();
     final dir = Directory('${base.path}/models/$id');
@@ -69,12 +82,42 @@ class ModelManager {
     return dir;
   }
 
+  /// Path where a model's metadata is stored locally.
+  static Future<File> _metaFileForId(String id) async {
+    final dir = await _dirForId(id);
+    return File('${dir.path}/meta.json');
+  }
+
+  // ─── Metadata persistence ──────────────────────────────────────────────────
+
+  /// Saves [def] to disk so the model is discoverable without network access.
+  static Future<void> _saveMeta(ModelDefinition def) async {
+    final file = await _metaFileForId(def.id);
+    await file.writeAsString(jsonEncode(def.toJson()));
+  }
+
+  /// Reads locally stored metadata for [id], or null if none exists.
+  static Future<ModelDefinition?> _loadMeta(String id) async {
+    try {
+      final file = await _metaFileForId(id);
+      if (!await file.exists()) return null;
+      final json = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      return ModelDefinition.fromJson(json);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ─── Catalog ───────────────────────────────────────────────────────────────
+
   static Future<List<ModelDefinition>> fetchCatalog() async {
     final dio = Dio();
     final resp = await dio.get<String>(_catalogUrl);
     final list = jsonDecode(resp.data!) as List;
     return list.map((e) => ModelDefinition.fromJson(e)).toList();
   }
+
+  // ─── Download state ────────────────────────────────────────────────────────
 
   static Future<bool> isDownloaded(String id, List<_ModelFile> files) async {
     final dir = await _dirForId(id);
@@ -84,13 +127,23 @@ class ModelManager {
     return true;
   }
 
-  /// Returns all downloaded models with their attribution info.
+  /// Returns all downloaded models using only local metadata — no network call.
+  ///
+  /// Models that were removed from the remote catalog still appear here as long
+  /// as their files remain on disk.
   static Future<List<ModelDefinition>> downloadedModels() async {
     try {
-      final catalog = await fetchCatalog();
+      final base = await getApplicationDocumentsDirectory();
+      final modelsDir = Directory('${base.path}/models');
+      if (!await modelsDir.exists()) return [];
+
       final result = <ModelDefinition>[];
-      for (final def in catalog) {
-        if (await isDownloaded(def.id, def.files)) {
+      await for (final entity in modelsDir.list()) {
+        if (entity is! Directory) continue;
+        final id = entity.path.split('/').last;
+        final def = await _loadMeta(id);
+        if (def == null) continue;
+        if (await isDownloaded(id, def.files)) {
           result.add(def);
         }
       }
@@ -100,6 +153,9 @@ class ModelManager {
     }
   }
 
+  /// Attribution string for all locally downloaded models — works offline.
+  ///
+  /// Reflects the metadata that was current at download time for each model.
   static Future<String> downloadedModelsAttribution() async {
     final models = await downloadedModels();
     if (models.isEmpty) return '';
@@ -109,36 +165,47 @@ class ModelManager {
     return 'Speech Models:\n${entries.join('\n')}';
   }
 
-  /// Returns local model directory path if fully downloaded.
-  static Future<String?> getModelPath(ModelDefinition def) async {
-    final downloaded = await isDownloaded(def.id, def.files);
-    if (!downloaded) return null;
-    final dir = await _dirForId(def.id);
-    return dir.path;
-  }
+  // ─── Active model ──────────────────────────────────────────────────────────
 
-  /// Returns the active [ModelDefinition] with its local path if a model is
-  /// selected and fully downloaded, or null otherwise.
+  /// Returns the active model using only local metadata — no network call.
+  ///
+  /// Fast: reads one small JSON file from disk rather than fetching the remote
+  /// catalog and scanning all models.
   static Future<({ModelDefinition def, String path})?> getActiveModel() async {
-    final selectedId = await ModelManager.getSelectedId();
+    final selectedId = await getSelectedId();
     if (selectedId == null) return null;
 
-    List<ModelDefinition> catalog;
-    try {
-      catalog = await ModelManager.fetchCatalog();
-    } catch (_) {
-      return null;
-    }
+    final def = await _loadMeta(selectedId);
+    if (def == null) return null;
 
-    final matches = catalog.where((d) => d.id == selectedId);
-    if (matches.isEmpty) return null;
+    if (!await isDownloaded(selectedId, def.files)) return null;
 
-    final def = matches.first;
-    final path = await ModelManager.getModelPath(def);
-    if (path == null) return null;
-
-    return (def: def, path: path);
+    final dir = await _dirForId(selectedId);
+    return (def: def, path: dir.path);
   }
+
+  /// Like [getActiveModel] but also refreshes local metadata from the catalog
+  /// when a network connection is available (e.g. for attribution updates).
+  ///
+  /// Falls back to [getActiveModel] on any network error.
+  static Future<({ModelDefinition def, String path})?> getActiveModelRefreshing() async {
+    try {
+      final catalog = await fetchCatalog();
+      final selectedId = await getSelectedId();
+      if (selectedId == null) return null;
+
+      final matches = catalog.where((d) => d.id == selectedId);
+      if (matches.isNotEmpty) {
+        // Persist refreshed metadata so attribution stays current.
+        await _saveMeta(matches.first);
+      }
+    } catch (_) {
+      // Network unavailable — fall through to offline path below.
+    }
+    return getActiveModel();
+  }
+
+  // ─── Download / delete ─────────────────────────────────────────────────────
 
   static Future<void> downloadModel({
     required ModelDefinition def,
@@ -170,11 +237,18 @@ class ModelManager {
       await File(tmp).rename(dest);
       onProgress((i + 1) / files.length, f.name);
     }
+
+    // Persist metadata only after all files are fully downloaded.
+    await _saveMeta(def);
   }
 
   static Future<void> deleteModel(String id) async {
     final dir = await _dirForId(id);
     if (await dir.exists()) await dir.delete(recursive: true);
+    // meta.json lives inside the directory, so it's removed automatically.
+
+    final selectedId = await getSelectedId();
+    if (selectedId == id) await setSelectedId(null);
   }
 
   static Future<int> sizeOnDisk(String id) async {

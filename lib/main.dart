@@ -89,7 +89,6 @@ class _HomePageState extends State<HomePage> {
     if (active == null) {
       await ModelDownloadDialog.show(context);
     }
-    await Future.delayed(const Duration(milliseconds: 250));
 
     // For sharing images coming from outside the app while the app is in the memory
     _intentDataStreamSubscription = FlutterSharingIntent.instance.getMediaStream().listen(
