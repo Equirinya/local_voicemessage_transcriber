@@ -61,13 +61,12 @@ class _TranscribePageState extends State<TranscribePage> {
           loading = false;
         });
         return;
-      }else{
+      } else {
         active = await ModelManager.getActiveModel();
       }
     }
 
     try {
-
       // Convert input to 16 kHz mono PCM WAV — still needed for arbitrary formats.
       final tempDir = await getTemporaryDirectory();
       convertedPath = '${tempDir.path}/converted_audio.wav';
@@ -78,7 +77,7 @@ class _TranscribePageState extends State<TranscribePage> {
       }
 
       // Stream segments as they arrive from the isolate.
-      await for (final seg in transcribeStream(convertedPath, active!.path)) {
+      await for (final seg in transcribeStream(convertedPath, active!.path, active.def.modelType, streaming: active.def.streaming)) {
         if (!mounted) break;
         setState(() => segments.add(seg));
       }
@@ -136,8 +135,8 @@ class _TranscribePageState extends State<TranscribePage> {
                             final i = entry.$1;
                             final word = entry.$2;
                             final wordTs = seg.fromTs.inMilliseconds + (i * msPerWord).round();
-                            return TapRegion(
-                              onTapInside: (_) => widget.audioJumpTo(wordTs),
+                            return GestureDetector(
+                              onTap: () => widget.audioJumpTo(wordTs),
                               child: Text('$word ', style: Theme.of(context).textTheme.bodyLarge),
                             );
                           });
@@ -145,8 +144,15 @@ class _TranscribePageState extends State<TranscribePage> {
                       ),
                     ),
                   ),
-                  if (loading) const Center(child: CupertinoActivityIndicator())
-                  else if (segments.isEmpty) FilledButton(onPressed: () => transcribe(), child: const Text('Transcribe'))
+                  if (loading)
+                    const Center(child: CupertinoActivityIndicator())
+                  else if (segments.isEmpty)
+                    FilledButton(onPressed: () => transcribe(), child: const Text('Transcribe'))
+                  else
+                    Align(
+                      alignment: Alignment.bottomRight,
+                      child: IconButton(onPressed: () => transcribe(), icon: const Icon(Icons.refresh), iconSize: 8,)
+                    )
                 ],
               ),
             ),

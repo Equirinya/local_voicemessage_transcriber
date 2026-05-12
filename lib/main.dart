@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:audio_waveforms/audio_waveforms.dart';
 import 'package:chat_transcribe_shorten/settings_page.dart';
@@ -201,7 +202,7 @@ class _HomePageState extends State<HomePage> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Row(
-                                  mainAxisSize: MainAxisSize.min,
+                                  mainAxisSize: MainAxisSize.max,
                                   children: [
                                     IconButton(
                                       onPressed: () async {
@@ -212,18 +213,20 @@ class _HomePageState extends State<HomePage> {
                                       },
                                       icon: Icon(playerController.playerState.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded),
                                     ),
-                                    AudioFileWaveforms(
-                                      playerController: playerController,
-                                      waveformType: WaveformType.fitWidth,
-                                      animationDuration: const Duration(milliseconds: 100),
-                                      playerWaveStyle: waveStyle,
-                                      enableSeekGesture: true,
-                                      size: Size(MediaQuery.of(context).size.width * 0.9 - (4 * 48), MediaQuery.of(context).size.height * 0.05),
+                                    Expanded(
+                                      child: AudioFileWaveforms(
+                                        playerController: playerController,
+                                        waveformType: WaveformType.fitWidth,
+                                        animationDuration: const Duration(milliseconds: 100),
+                                        playerWaveStyle: waveStyle,
+                                        enableSeekGesture: true,
+                                        size: Size(MediaQuery.of(context).size.width * 0.9 - (4 * 48), MediaQuery.of(context).size.height * 0.05),
+                                      ),
                                     ),
                                     IconButton(
                                       onPressed: () async {
                                         final current = await playerController.getDuration(DurationType.current);
-                                        await playerController.seekTo(current - 10000);
+                                        await playerController.seekTo(max(0, current - 10000));
                                       },
                                       icon: const Icon(Icons.replay_10_rounded),
                                     ),
