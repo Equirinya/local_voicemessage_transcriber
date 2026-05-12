@@ -1,3 +1,6 @@
-# chat_transcribe_shorten
+# Local VoiceMessage Transcriber
 
-Transcribe voice messages and shorten transcriptions and chat messages with your own OpenAI Api Key
+Fully local audio transcription.
+Select between different models.
+
+Uses sherpa-onnx under the hood, if you want to include more models open an issue!
