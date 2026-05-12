@@ -67,6 +67,7 @@ void _transcribeIsolateEntry(_TranscribeRequest req) async {
 
 Future<void> _runOnline(_TranscribeRequest req, Float32List samples) async {
   String p(String name) => '${req.modelDirPath}/$name';
+  const int sampleRate = 16000;
 
   final config = sherpa_onnx.OnlineRecognizerConfig(
     model: sherpa_onnx.OnlineModelConfig(
@@ -83,16 +84,20 @@ Future<void> _runOnline(_TranscribeRequest req, Float32List samples) async {
   );
 
   final recognizer = sherpa_onnx.OnlineRecognizer(config);
-  const int sampleRate = 16000;
   const int chunkSize = sampleRate ~/ 10;
+
+  // Prepend 0.5 s of silence so the encoder has valid context from the first word.
+  const int silencePad = sampleRate ~/ 2;
+  final padded = Float32List(silencePad + samples.length);
+  padded.setRange(silencePad, padded.length, samples);
 
   final stream = recognizer.createStream();
   String prevText = '';
-  double chunkStartSec = 0.0;
+  double chunkStartSec = -(silencePad / sampleRate);
 
-  for (int offset = 0; offset < samples.length; offset += chunkSize) {
-    final end = (offset + chunkSize).clamp(0, samples.length);
-    final chunk = samples.sublist(offset, end);
+  for (int offset = 0; offset < padded.length; offset += chunkSize) {
+    final end = (offset + chunkSize).clamp(0, padded.length);
+    final chunk = padded.sublist(offset, end);
 
     stream.acceptWaveform(samples: chunk, sampleRate: sampleRate);
     while (recognizer.isReady(stream)) recognizer.decode(stream);
@@ -100,17 +105,20 @@ Future<void> _runOnline(_TranscribeRequest req, Float32List samples) async {
     if (recognizer.isEndpoint(stream)) {
       final text = recognizer.getResult(stream).text.trim();
       if (text.isNotEmpty && text != prevText) {
+        // Clamp fromTs to zero so the silence pad doesn't produce negative timestamps.
+        final fromMs = (chunkStartSec * 1000).round().clamp(0, double.maxFinite.toInt());
+        final toMs = ((offset + chunk.length - silencePad) / sampleRate * 1000).round().clamp(0, double.maxFinite.toInt());
         req.sendPort.send(
           Segment(
             text: text,
-            fromTs: Duration(milliseconds: (chunkStartSec * 1000).round()),
-            toTs: Duration(milliseconds: ((offset + chunk.length) / sampleRate * 1000).round()),
+            fromTs: Duration(milliseconds: fromMs),
+            toTs: Duration(milliseconds: toMs),
           ),
         );
         prevText = text;
       }
       recognizer.reset(stream);
-      chunkStartSec = (offset + chunk.length) / sampleRate;
+      chunkStartSec = (offset + chunk.length - silencePad) / sampleRate;
     }
   }
 
@@ -118,10 +126,11 @@ Future<void> _runOnline(_TranscribeRequest req, Float32List samples) async {
   while (recognizer.isReady(stream)) recognizer.decode(stream);
   final finalText = recognizer.getResult(stream).text.trim();
   if (finalText.isNotEmpty && finalText != prevText) {
+    final fromMs = (chunkStartSec * 1000).round().clamp(0, double.maxFinite.toInt());
     req.sendPort.send(
       Segment(
         text: finalText,
-        fromTs: Duration(milliseconds: (chunkStartSec * 1000).round()),
+        fromTs: Duration(milliseconds: fromMs),
         toTs: Duration(milliseconds: (samples.length / sampleRate * 1000).round()),
       ),
     );
@@ -138,7 +147,13 @@ Future<void> _runOfflineWithVad(_TranscribeRequest req, Float32List samples) asy
   const int sampleRate = 16000;
 
   final vadConfig = sherpa_onnx.VadModelConfig(
-    sileroVad: sherpa_onnx.SileroVadModelConfig(model: p('silero_vad.onnx'), threshold: 0.5, minSpeechDuration: 0.25, minSilenceDuration: 0.5),
+    sileroVad: sherpa_onnx.SileroVadModelConfig(
+      model: p('silero_vad.onnx'),
+      threshold: 0.6,
+      minSpeechDuration: 0.5,
+      minSilenceDuration: 1.2,
+      maxSpeechDuration: 15.0,
+    ),
     sampleRate: sampleRate,
     numThreads: 2,
   );
