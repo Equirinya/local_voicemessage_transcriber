@@ -41,6 +41,17 @@
     "decoder": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-fr-kroko-2025-08-06/resolve/main/decoder.onnx",
     "joiner":  "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-fr-kroko-2025-08-06/resolve/main/joiner.onnx",
     "tokens":  "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-fr-kroko-2025-08-06/resolve/main/tokens.txt"
+  },
+  {
+    "id": "nemo_de_fastconformer_hybrid_large_pc_int8",
+    "name": "NeMo German",
+    "license": "CC-BY-SA 4.0",
+    "repository": "https://huggingface.co/nvidia/stt_de_fastconformer_hybrid_large_pc",
+    "encoder": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-transducer-stt_de_fastconformer_hybrid_large_pc-int8/resolve/main/encoder.int8.onnx",
+    "decoder": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-transducer-stt_de_fastconformer_hybrid_large_pc-int8/resolve/main/decoder.int8.onnx",
+    "joiner":  "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-transducer-stt_de_fastconformer_hybrid_large_pc-int8/resolve/main/joiner.int8.onnx",
+    "tokens":  "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-transducer-stt_de_fastconformer_hybrid_large_pc-int8/resolve/main/tokens.txt",
+
   }
 
 ]
