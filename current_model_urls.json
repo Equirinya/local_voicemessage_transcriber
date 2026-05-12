@@ -61,6 +61,6 @@
     "decoder": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-transducer-stt_de_fastconformer_hybrid_large_pc-int8/resolve/main/decoder.int8.onnx",
     "joiner":  "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-transducer-stt_de_fastconformer_hybrid_large_pc-int8/resolve/main/joiner.int8.onnx",
     "tokens":  "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-transducer-stt_de_fastconformer_hybrid_large_pc-int8/resolve/main/tokens.txt",
-    "vad": "https://huggingface.co/deepghs/silero-vad-onnx/resolve/main/silero_vad.onnx",
+    "vad": "https://huggingface.co/deepghs/silero-vad-onnx/resolve/main/silero_vad.onnx"
   }
 ]
