@@ -4,6 +4,8 @@ import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+//reference: https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models
+
 const _catalogUrl =
     'https://raw.githubusercontent.com/Equirinya/local_voicemessage_transcriber/master/current_model_urls.json';
 

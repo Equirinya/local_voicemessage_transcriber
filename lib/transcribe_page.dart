@@ -151,7 +151,7 @@ class _TranscribePageState extends State<TranscribePage> {
                   else
                     Align(
                       alignment: Alignment.bottomRight,
-                      child: IconButton(onPressed: () => transcribe(), icon: const Icon(Icons.refresh), iconSize: 8,)
+                      child: IconButton(onPressed: () => transcribe(), icon: const Icon(Icons.refresh))
                     )
                 ],
               ),
