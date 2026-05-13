@@ -52,7 +52,7 @@
   },
   {
     "id": "nemo_de_fastconformer_hybrid_large_pc_int8",
-    "name": "NeMo German",
+    "name": "NeMo German int8",
     "streaming": false,
     "model_type": "nemo_transducer",
     "license": "CC-BY-SA 4.0",
@@ -61,6 +61,19 @@
     "decoder": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-transducer-stt_de_fastconformer_hybrid_large_pc-int8/resolve/main/decoder.int8.onnx",
     "joiner":  "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-transducer-stt_de_fastconformer_hybrid_large_pc-int8/resolve/main/joiner.int8.onnx",
     "tokens":  "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-transducer-stt_de_fastconformer_hybrid_large_pc-int8/resolve/main/tokens.txt",
+    "vad": "https://huggingface.co/deepghs/silero-vad-onnx/resolve/main/silero_vad.onnx"
+  },
+  {
+    "id": "nemo_de_fastconformer_hybrid_large_pc",
+    "name": "NeMo German",
+    "streaming": false,
+    "model_type": "nemo_transducer",
+    "license": "CC-BY-SA 4.0",
+    "repository": "https://huggingface.co/nvidia/stt_de_fastconformer_hybrid_large_pc",
+    "encoder": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-transducer-stt_de_fastconformer_hybrid_large_pc/resolve/main/encoder.onnx",
+    "decoder": "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-transducer-stt_de_fastconformer_hybrid_large_pc/resolve/main/decoder.onnx",
+    "joiner":  "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-transducer-stt_de_fastconformer_hybrid_large_pc/resolve/main/joiner.onnx",
+    "tokens":  "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-transducer-stt_de_fastconformer_hybrid_large_pc/resolve/main/tokens.txt",
     "vad": "https://huggingface.co/deepghs/silero-vad-onnx/resolve/main/silero_vad.onnx"
   }
 ]
